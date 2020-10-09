@@ -8,6 +8,7 @@ def arguments():
     ap.add_argument('-o', '--operation', required=True, help='what I will do for you?', choices=['decrypt', 'encrypt'])
     ap.add_argument('-k', '--key', help='the key that the program will use to encrypt or decrypt the file')
     ap.add_argument('-iv', '--initializator-vector', help='the initializator vector of the cipher block')
+    ap.add_argument('-siv', '--save-iv', default='true', help='save the iv in the file')
     ap.add_argument('-ks', '--key-size', default='256', choices=['128', '192', '256'], help='the size of the key that you want')
     return vars(ap.parse_args())
 
@@ -19,20 +20,19 @@ def hexdigest(hex_:bytes):
 
 def data_corrector(data:bytes, block_size:int):
     data = data.decode()
-    data += '\x00' * (block_size - (len(data) % block_size))
+    data += '\x00' * (16-len(data))
     return data.encode()
 
 def main(args):
-    cipher, key, iv = create_cipher(args['key'], args['initializator_vector'], int(args['key_size']))
+    key = None
     if args['operation'] == 'encrypt':
+        cipher, key, iv = create_cipher(args['key'], args['initializator_vector'], int(args['key_size']))
         for file_ in args['file']:
-            encrypt_file(file_, cipher)
+            encrypt_file(file_, cipher, iv)
+        print(hexdigest(key))
     else:
         for file_ in args['file']:
-            decrypt_file(file_, cipher)
-    print(hexdigest(key))
-    print(hexdigest(iv))
-
+            decrypt_file(file_, args['key'], args['initializator_vector'])
 
 def create_cipher(key, iv, key_size=256, mode=modes.CBC):
     if key == None:
@@ -47,17 +47,23 @@ def create_cipher(key, iv, key_size=256, mode=modes.CBC):
         iv = os.urandom(16)
     return Cipher(algorithms.AES(key), mode(iv)), key, iv
 
-def decrypt_file(file_, cipher_):
+def decrypt_file(file_, key, iv):
     data = None
     with open(file_, 'rb') as reader:
-        data = reader.read()
+        content = reader.read()
+        if iv == None:
+            iv = content[:16]
+        print(iv)
+        data = content[16:]
 
+    cipher_, key, iv = create_cipher(key, hexdigest(iv))
     decryptor_ = cipher_.decryptor()
     data = decryptor_.update(data) + decryptor_.finalize()
     with open(file_, 'wb') as writer:
         writer.write(data)
+        #print(data)
 
-def encrypt_file(file_, cipher_):
+def encrypt_file(file_, cipher_, iv):
     data = None
     with open(file_, 'rb') as reader:
         data = reader.read()
@@ -66,8 +72,9 @@ def encrypt_file(file_, cipher_):
     encryptor_ = cipher_.encryptor()
     data = encryptor_.update(data) + encryptor_.finalize()
     with open(file_, 'wb') as writer:
-        writer.write(data)
-
+        print(hexdigest(iv))
+        #print(data)
+        writer.write(iv+data)
 
 if __name__ == '__main__':
     args = arguments()
